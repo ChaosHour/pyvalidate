@@ -30,7 +30,11 @@ This script performs various operations on a MySQL database.
             python3 pyvalidate.py -d your_database_name
             
     python3 pyvalidate2.py -d temp -t xxxx -c 'Column Name' --fix
-    
+
+```
+
+## More details on usage
+```python
 The `fix_data` function is designed to identify and print out data in a specific column of a specific table in a database that contains non-UTF8 compliant characters.
 
 Here's a breakdown of what it does:
