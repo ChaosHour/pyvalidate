@@ -47,6 +47,7 @@ def parse_arguments():
     parser.add_argument('-c', '--c', help='Columne Name')
     parser.add_argument('--show', action='store_true', help='Show Databases')
     parser.add_argument('--fix', action='store_true', help='Fix data')
+    parser.add_argument('--fix2', action='store_true', help='Fix data2')
     return parser.parse_args()
 
 def get_client_config(file_path="~/.my.cnf"):
@@ -91,8 +92,12 @@ def fix_data(cursor, database, table_name, column_name):  # Add column_name as a
     for (latin1, utf8) in cursor:
         print(f"{colored('latin1:', 'red')} {latin1}, {colored('utf8:', 'blue')} {utf8}")
 
-import time
 
+def fix_data2(cursor, database, table_name, column_name):
+    cursor.execute(f"SELECT `{column_name}` FROM `{database}`.`{table_name}` WHERE HEX(`{column_name}`) RLIKE '^(..)*(F.|E2|EF)'")
+    for (result,) in cursor:
+        print(result)
+        print(f"{colored('result:', 'red')} {result}")
 
 def check_utf8_compliance(cursor, database, table=None):
     max_retries = 5
@@ -159,6 +164,8 @@ def main():
         show_databases(cursor)
     elif args.fix:
         fix_data(cursor, args.database, args.table, args.c)
+    elif args.fix2:
+        fix_data2(cursor, args.database, args.table, args.c)    
     elif args.database:
         check_utf8_compliance(cursor, args.database, args.table)
 
