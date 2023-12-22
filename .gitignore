@@ -161,4 +161,5 @@ cython_debug/
 
 # files
 pyvalidate2copy-KEEP.py
+pyvalidate2copy2.py
 pyvalidate.py

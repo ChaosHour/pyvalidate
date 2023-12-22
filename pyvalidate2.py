@@ -88,6 +88,28 @@ def show_databases(cursor):
     for (database,) in cursor:
         print(database)
 
+def is_unusual_latin1(sequence):
+    """Check if the sequence contains unusual Latin-1 characters."""
+    for char in sequence:
+        if char < 0x20 or 0x7F <= char <= 0x9F:
+            return True
+    return False
+
+def is_valid_utf8(byte_sequence):
+    """Check if the sequence is a valid UTF-8 sequence."""
+    try:
+        byte_sequence.decode('utf-8')
+        return True
+    except UnicodeDecodeError:
+        return False
+
+def analyze_data(hex_string):
+    """Analyze the HEX string for unusual Latin-1 but valid UTF-8 sequences."""
+    bytes_sequence = bytes.fromhex(hex_string)
+    
+    if is_unusual_latin1(bytes_sequence) and is_valid_utf8(bytes_sequence):
+        print(f"Unusual Latin-1 but valid UTF-8 sequence found: {bytes_sequence}")
+
 def fix_data(cursor, database, table_name, column_name):  # Add column_name as a parameter
     cursor.execute(f"SELECT CONVERT(CONVERT(`{column_name}` USING BINARY) USING latin1) AS latin1, CONVERT(CONVERT(`{column_name}` USING BINARY) USING utf8) AS utf8 FROM `{database}`.`{table_name}` WHERE CONVERT(`{column_name}` USING BINARY) RLIKE CONCAT('[', UNHEX('80'), '-', UNHEX('FF'), ']')")
     for (latin1, utf8) in cursor:
@@ -106,12 +128,20 @@ def check_hex_values(cursor, database):
     columns = cursor.fetchall()
 
     for (table_name, column_name) in columns:
-        cursor.execute(f"SELECT `{column_name}`, HEX(`{column_name}`) FROM `{database}`.`{table_name}` WHERE HEX(`{column_name}`) REGEXP '(..)*[89a-fA-F]' LIMIT 5")
-        results = cursor.fetchall()
-        for (col, hex_col) in results:
-            print(f"{colored('Table:', 'red')} {table_name}, Column: {column_name}, Value: {col}, {colored('Hex:', 'blue')} {hex_col}")
+        try:
+            cursor.execute(f"SELECT `{column_name}`, HEX(`{column_name}`) FROM `{database}`.`{table_name}` WHERE HEX(`{column_name}`) REGEXP '(..)*[89a-fA-F]' LIMIT 5")
+            results = cursor.fetchall()
+            for (col, hex_col) in results:
+                print(f"{colored('Table:', 'red')} {table_name}, Column: {column_name}, Value: {col}, {colored('Hex:', 'blue')} {hex_col}")
+                analyze_data(hex_col)
+        except mysql.connector.errors.ProgrammingError as e:
+            if 'doesn\'t exist' in str(e):
+                print(f"Table {table_name} doesn't exist. Skipping...")
+                continue
+            else:
+                raise
 
-
+"""
 def check_utf8_compliance(cursor, database, table=None):
     max_retries = 5
     batch_size = 1000  # Adjust this value as needed
@@ -159,12 +189,73 @@ def check_utf8_compliance(cursor, database, table=None):
                 # ... process the rows ...
 
                 offset += batch_size
-                
 """
-            for (value,) in rows:
-                if isinstance(value, str) and not value.isascii():
-                    print(colored("\nNon-UTF8 character found in table:", 'red') + f" {table_name}, column: {column_name}, value: {value}\n")
-                    """
+def check_utf8_compliance(cursor, database, table=None):
+    max_retries = 5
+    batch_size = 1000  # Adjust this value as needed
+
+    if table:
+        tables = [(table,)]
+    else:
+        cursor.execute(f"SHOW TABLES FROM {database}")
+        tables = cursor.fetchall()
+
+    for (table_name,) in tables:
+        for attempt in range(max_retries):
+            try:
+                cursor.execute(f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '{table_name}' AND table_schema = '{database}' ORDER BY ordinal_position")
+                columns = cursor.fetchall()
+            except mysql.connector.errors.ProgrammingError as e:
+                if 'doesn\'t exist' in str(e):
+                    print(f"Table {table_name} doesn't exist. Skipping...")
+                    continue
+                else:
+                    raise
+
+        for (column_name,) in columns:
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM `{database}`.`{table_name}` WHERE LENGTH(`{column_name}`) != CHAR_LENGTH(`{column_name}`)")
+                count = cursor.fetchone()[0]
+                if count > 0:
+                    print(f"Current table: {colored(table_name, 'blue')}")
+                    print(f"Column: {colored(column_name, 'blue')}")
+                    print(f"Count of records that need to be fixed: {colored(str(count), 'blue')}\n")
+            except mysql.connector.errors.ProgrammingError as e:
+                if 'doesn\'t exist' in str(e):
+                    print(f"Table {table_name} doesn't exist. Skipping...")
+                    continue
+                else:
+                    raise
+
+        try:
+            cursor.execute(f"SELECT COUNT(*) FROM `{database}`.`{table_name}`")
+            total_rows = cursor.fetchone()[0]
+        except mysql.connector.errors.ProgrammingError as e:
+            if 'doesn\'t exist' in str(e):
+                print(f"Table {table_name} doesn't exist. Skipping...")
+                continue
+            else:
+                raise
+
+        for (column_name,) in columns:
+            offset = 0
+            while True:
+                try:
+                    cursor.execute(f"SELECT `{column_name}` FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
+                    rows = cursor.fetchall()
+                    if not rows:
+                        break  # No more rows to fetch
+
+                    # ... process the rows ...
+
+                    offset += batch_size
+                except mysql.connector.errors.ProgrammingError as e:
+                    if 'doesn\'t exist' in str(e):
+                        print(f"Table {table_name} doesn't exist. Skipping...")
+                        break
+                    else:
+                        raise
+
 def main():
     args = parse_arguments()
     if not any(vars(args).values()):
