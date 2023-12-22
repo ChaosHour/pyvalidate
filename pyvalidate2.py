@@ -48,6 +48,7 @@ def parse_arguments():
     parser.add_argument('--show', action='store_true', help='Show Databases')
     parser.add_argument('--fix', action='store_true', help='Fix data')
     parser.add_argument('--fix2', action='store_true', help='Fix data2')
+    parser.add_argument('--fix3', action='store_true', help='Fix data3')
     return parser.parse_args()
 
 def get_client_config(file_path="~/.my.cnf"):
@@ -98,6 +99,18 @@ def fix_data2(cursor, database, table_name, column_name):
     for (result,) in cursor:
         print(result)
         print(f"{colored('result:', 'red')} {result}")
+
+
+def check_hex_values(cursor, database):
+    cursor.execute(f"SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{database}' AND DATA_TYPE IN ('char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext')")
+    columns = cursor.fetchall()
+
+    for (table_name, column_name) in columns:
+        cursor.execute(f"SELECT `{column_name}`, HEX(`{column_name}`) FROM `{database}`.`{table_name}` WHERE HEX(`{column_name}`) REGEXP '(..)*[89a-fA-F]' LIMIT 5")
+        results = cursor.fetchall()
+        for (col, hex_col) in results:
+            print(f"{colored('Table:', 'red')} {table_name}, Column: {column_name}, Value: {col}, {colored('Hex:', 'blue')} {hex_col}")
+
 
 def check_utf8_compliance(cursor, database, table=None):
     max_retries = 5
@@ -165,7 +178,9 @@ def main():
     elif args.fix:
         fix_data(cursor, args.database, args.table, args.c)
     elif args.fix2:
-        fix_data2(cursor, args.database, args.table, args.c)    
+        fix_data2(cursor, args.database, args.table, args.c)
+    elif args.fix3:
+        check_hex_values(cursor, args.database)        
     elif args.database:
         check_utf8_compliance(cursor, args.database, args.table)
 
