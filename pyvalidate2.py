@@ -5,7 +5,7 @@
 ChaosHour - Kurt Larsen
 """
 
-
+import re
 import os
 import time
 import argparse
@@ -88,6 +88,22 @@ def show_databases(cursor):
     for (database,) in cursor:
         print(database)
 
+"""
+def clean_spaces(byte_sequence: str) -> str:
+    #str2 = re.sub(r'\s', '', byte_sequence.decode.hex())
+    str2 = re.sub(r'\s', '', byte_sequence.decode('latin-1'))
+    return bytes.fromhex(str2.encode('latin-1').encode('hex'))
+"""
+def clean_spaces(byte_sequence: str) -> str:
+    str2 = re.sub(r'\s', '', byte_sequence.decode('latin-1'))
+    str2 = re.sub('\x00', '', str2)
+    return bytes.fromhex(str2.encode('latin-1').hex())
+
+"""
+def remove_null_bytes(input_string: str) -> str:
+    return re.sub('\x00', '', input_string)
+"""
+
 def is_unusual_latin1(sequence):
     """Check if the sequence contains unusual Latin-1 characters."""
     for char in sequence:
@@ -106,9 +122,12 @@ def is_valid_utf8(byte_sequence):
 def analyze_data(hex_string):
     """Analyze the HEX string for unusual Latin-1 but valid UTF-8 sequences."""
     bytes_sequence = bytes.fromhex(hex_string)
+    c2 =  clean_spaces(bytes_sequence) 
+    if is_unusual_latin1(c2) and is_valid_utf8(bytes_sequence):
+        return f"Unusual Latin-1 but valid UTF-8 sequence found: {bytes_sequence.decode('utf-8')}"
+    else:
+        return None
     
-    if is_unusual_latin1(bytes_sequence) and is_valid_utf8(bytes_sequence):
-        print(f"Unusual Latin-1 but valid UTF-8 sequence found: {bytes_sequence}")
 
 def fix_data(cursor, database, table_name, column_name):  # Add column_name as a parameter
     cursor.execute(f"SELECT CONVERT(CONVERT(`{column_name}` USING BINARY) USING latin1) AS latin1, CONVERT(CONVERT(`{column_name}` USING BINARY) USING utf8) AS utf8 FROM `{database}`.`{table_name}` WHERE CONVERT(`{column_name}` USING BINARY) RLIKE CONCAT('[', UNHEX('80'), '-', UNHEX('FF'), ']')")
@@ -132,8 +151,12 @@ def check_hex_values(cursor, database):
             cursor.execute(f"SELECT `{column_name}`, HEX(`{column_name}`) FROM `{database}`.`{table_name}` WHERE HEX(`{column_name}`) REGEXP '(..)*[89a-fA-F]' LIMIT 5")
             results = cursor.fetchall()
             for (col, hex_col) in results:
-                print(f"{colored('Table:', 'red')} {table_name}, Column: {column_name}, Value: {col}, {colored('Hex:', 'blue')} {hex_col}")
-                analyze_data(hex_col)
+                #print(f"{colored('Table:', 'red')} {table_name}, Column: {column_name}, Value: {col}, {colored('Hex:', 'blue')} {hex_col}")
+                result = analyze_data(hex_col)
+                if result:
+                    print(f"{colored('Table:', 'red')} {table_name}, Column: {column_name}, Value: {col}, {colored('Hex:', 'blue')} {hex_col}")
+                    print(result)
+                    print("")
         except mysql.connector.errors.ProgrammingError as e:
             if 'doesn\'t exist' in str(e):
                 print(f"Table {table_name} doesn't exist. Skipping...")
@@ -141,7 +164,6 @@ def check_hex_values(cursor, database):
             else:
                 raise
 
-"""
 def check_utf8_compliance(cursor, database, table=None):
     max_retries = 5
     batch_size = 1000  # Adjust this value as needed
@@ -155,55 +177,9 @@ def check_utf8_compliance(cursor, database, table=None):
     for (table_name,) in tables:
         for attempt in range(max_retries):
             try:
-                cursor.execute(f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '{table_name}' AND table_schema = '{database}' ORDER BY ordinal_position")
-                columns = cursor.fetchall()
-                break
-            except mysql.connector.errors.ProgrammingError as e:
-                if 'doesn\'t exist' in str(e) and attempt < max_retries - 1:  # Retry if table doesn't exist
-                    time.sleep(1)  # Wait for 1 second before retrying
-                    continue
-                else:
-                    print(f"Error: {e}. Skipping table {table_name}.")
-                    break
-
-        for (column_name,) in columns:
-            if isinstance(column_name, str) and column_name.isascii():
-                cursor.execute(f"SELECT COUNT(*) FROM `{database}`.`{table_name}` WHERE LENGTH(`{column_name}`) != CHAR_LENGTH(`{column_name}`)")
-                count = cursor.fetchone()[0]
-                if count > 0:
-                    print(f"Current table: {table_name}")
-                    print(f"Column: {column_name}")
-                    print(f"Count of records that need to be fixed: {count}\n")
-
-        cursor.execute(f"SELECT COUNT(*) FROM `{database}`.`{table_name}`")
-        total_rows = cursor.fetchone()[0]
-
-        for (column_name,) in columns:
-            offset = 0
-            while True:
-                cursor.execute(f"SELECT `{column_name}` FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
-                rows = cursor.fetchall()
-                if not rows:
-                    break  # No more rows to fetch
-
-                # ... process the rows ...
-
-                offset += batch_size
-"""
-def check_utf8_compliance(cursor, database, table=None):
-    max_retries = 5
-    batch_size = 1000  # Adjust this value as needed
-
-    if table:
-        tables = [(table,)]
-    else:
-        cursor.execute(f"SHOW TABLES FROM {database}")
-        tables = cursor.fetchall()
-
-    for (table_name,) in tables:
-        for attempt in range(max_retries):
-            try:
-                cursor.execute(f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '{table_name}' AND table_schema = '{database}' ORDER BY ordinal_position")
+                #cursor.execute(f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '{table_name}' AND table_schema = '{database}' ORDER BY ordinal_position")
+                # Modify the query to only check the column type that you want to check AND DATA_TYPE IN ('char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext')")
+                cursor.execute(f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '{table_name}' AND table_schema = '{database}' AND DATA_TYPE IN ('char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext') ORDER BY ordinal_position")
                 columns = cursor.fetchall()
             except mysql.connector.errors.ProgrammingError as e:
                 if 'doesn\'t exist' in str(e):
