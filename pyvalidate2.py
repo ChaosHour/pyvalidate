@@ -3,6 +3,15 @@
 
 """ in a more Pythonic way
 ChaosHour - Kurt Larsen
+All of the queries in this script are based on the following article:
+https://www.percona.com/blog/2013/10/16/utf8-data-on-latin1-tables-converting-to-utf8-without-downtime-or-double-encoding/
+https://dba.stackexchange.com/questions/317425/how-can-i-detect-double-encoded-mysql-columns-and-rows-and-validate-the-repair
+https://stackoverflow.com/questions/35167891/mysql-utf8mb4-encoding-issues
+
+Credits:
+Rick James
+[https://dba.stackexchange.com/users/1876/rick-james]
+Percona - MySQL High Performance Blog
 """
 
 import re
