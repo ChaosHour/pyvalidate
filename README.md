@@ -10,9 +10,6 @@ Checks if utf8 encoded data is being stored in latin1 columns. Validates if the 
 This script performs various operations on a MySQL database.
 
     Usage:
-        python3 pyvalidate.py [OPTIONS]
-
-    Usage:
         python3 pyvalidate4.py [OPTIONS]
 
     Options:
@@ -35,7 +32,7 @@ This script performs various operations on a MySQL database.
             python3 pyvalidate4.py --show
 
         show character set and collation for a specific table: 
-            python3 pyvalidate.py -d database -t table --char
+            python3 pyvalidate4.py -d database -t table --char
 
 ```
 
