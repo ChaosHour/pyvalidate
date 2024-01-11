@@ -27,6 +27,7 @@ def parse_arguments():
         -s, --source    Source Host
         -d, --database  Database Name
         -t, --table     Select table
+        --char          Show character set and collation
         --show          Show Databases
        
 
