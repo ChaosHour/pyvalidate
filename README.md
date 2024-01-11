@@ -44,7 +44,10 @@ This script performs various operations on a MySQL database.
 This script is a command-line utility for performing various operations on a MySQL database.
 
 **Check Compliance**: 
-If neither `--show` nor `--char` is passed, the script checks the compliance of the specified database (and table, if specified). It fetches all text-type columns from the database (or table) and checks each value for unusual Latin-1 and cp1252 characters. If it finds any, it prints the offending IDs, the original value, the decoded value, the byte array of the original value, and the offending character.
-
-
+If neither `--show` nor `--char` is passed, the script checks the compliance 
+of the specified database (and table, if specified). It fetches all text-type 
+columns from the database (or table) and checks each value for unusual 
+Latin-1 and cp1252 characters. If it finds any, it prints the offending IDs, 
+the original value, the decoded value, the byte array of the original value, 
+and the offending character.
 ```
