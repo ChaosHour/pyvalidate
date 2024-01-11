@@ -102,7 +102,7 @@ def is_unusual_cp1252(sequence: bytearray):
     """Check if the sequence contains unusual cp1252 characters."""
     return any((char > 255) or char in [129, 141, 143, 144, 157] for char in sequence)
 
-def check_compliance(cursor, database, table=None):
+def check_compliance(cursor, database, table=None, show_charset=False):
     max_retries = 5
     batch_size = 1000  # Adjust this value as needed
     offending_ids = []  # List to store offending IDs
@@ -115,7 +115,8 @@ def check_compliance(cursor, database, table=None):
 
     for (table_name,) in tables:
         charset, collation = get_table_charset_and_collation(cursor, database, table_name)
-        print(f"Character set: {charset}, Collation: {collation}")
+        if show_charset:
+            print(f"Character set: {charset}, Collation: {collation}")
         for attempt in range(max_retries):
             try:
                 cursor.execute(f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '{table_name}' AND table_schema = '{database}' AND DATA_TYPE IN ('char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext') ORDER BY ordinal_position")
@@ -187,7 +188,7 @@ def main():
             charset, collation = get_table_charset_and_collation(cursor, args.database, args.table)
             print(f"Character set: {charset}, Collation: {collation}")
         else:
-            check_compliance(cursor, args.database, args.table)
+            check_compliance(cursor, args.database, args.table, show_charset=args.char)
 
     cnx.close()
 
