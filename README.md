@@ -12,43 +12,53 @@ This script performs various operations on a MySQL database.
     Usage:
         python3 pyvalidate.py [OPTIONS]
 
+    Usage:
+        python3 pyvalidate4.py [OPTIONS]
+
     Options:
         -s, --source    Source Host
         -d, --database  Database Name
         -t, --table     Select table
         --show          Show Databases
-        --fix           Fix data
+       
 
     Examples:
         Show databases:
-            python3 pyvalidate.py --show
+            python3 pyvalidate4.py --show
 
-        Fix data:
-            python3 pyvalidate.py --fix
+        
+        Check for records with unusual Latin-1 characters and cp1252 characters print the offending IDs:
+        python3 pyvalidate4.py -d database -t table
 
-        Check UTF-8 compliance for a specific database:
-            python3 pyvalidate.py -d your_database_name
-            
-    python3 pyvalidate2.py -d temp -t xxxx -c 'Column Name' --fix
+    Examples:
+        Show databases:
+            python3 pyvalidate4.py --show
+
+        show character set and collation for a specific table: 
+            python3 pyvalidate.py -d database -t table --char
 
 ```
 
 ## More details on usage
 ```python
-The `fix_data` function is designed to identify and print out data in a specific column of a specific table in a database that contains non-UTF8 compliant characters.
+This script is a command-line utility for performing various operations on a MySQL database. Here's a breakdown of what it does:
 
-Here's a breakdown of what it does:
+1. **Argument Parsing**: The script accepts command-line arguments to specify the database and table to operate on, whether to show the character set and collation, and whether to show all databases.
 
-1. It takes four parameters: `cursor` (a MySQL cursor object for executing SQL commands), `database` (the name of the database), `table_name` (the name of the table), and `column_name` (the name of the column).
+2. **Configuration Loading**: The script loads MySQL client configuration from a file (default is `~/.my.cnf`).
 
-2. It executes a SQL command that does the following:
-   - Selects data from the specified column in the specified table.
-   - Converts the data to binary, then to latin1 and utf8.
-   - Filters the data to only include rows where the binary representation of the column data contains non-UTF8 compliant characters (those with byte values between 0x80 and 0xFF).
-   - The result of this command is a list of tuples, where each tuple contains two elements: the latin1 and utf8 versions of the column data.
+3. **Database Connection**: The script connects to the MySQL database using the loaded configuration.
 
-3. It iterates over the result of the SQL command. For each tuple, it prints the latin1 version in red and the utf8 version in blue.
+4. **Database Operations**: Depending on the passed arguments, the script performs one of the following operations:
 
-Please note that this function doesn't actually "fix" the data in the sense of modifying the database. It only identifies and prints out the non-UTF8 compliant data.
+   - **Show Databases**: If the `--show` argument is passed, the script fetches and prints all database names.
+   
+   - **Show Character Set and Collation**: If the `--char` argument is passed, the script fetches and prints the character set and collation for the specified database and table.
+   
+   - **Check Compliance**: If neither `--show` nor `--char` is passed, the script checks the compliance of the specified database (and table, if specified). It fetches all text-type columns from the database (or table) and checks each value for unusual Latin-1 and cp1252 characters. If it finds any, it prints the offending IDs, the original value, the decoded value, the byte array of the original value, and the offending character.
+
+5. **Database Disconnection**: After performing the operations, the script disconnects from the database.
+
+The script is designed to be run from the command line, and it prints its output to the console.
 
 ```
