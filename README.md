@@ -13,7 +13,6 @@ This script performs various operations on a MySQL database.
         python3 pyvalidate4.py [OPTIONS]
 
     Options:
-        -s, --source    Source Host
         -d, --database  Database Name
         -t, --table     Select table
         --char          Show character set and collation
@@ -48,3 +47,26 @@ Latin-1 and cp1252 characters. If it finds any, it prints the offending IDs,
 the original value, the decoded value, the byte array of the original value, 
 and the offending character.
 ```
+
+## Example output
+```python
+❯ python3 pyvalidate4.py -d xxx -t xxx --char
+Connected to server (server): ✔
+Character set: latin1, Collation: latin1_general_ci
+```
+
+```python
+❯ python3 pyvalidate4.py  -d xxxx -t xxxx
+Connected to server (server): ✔
+
+Current table: xxxx
+Column: xxxx
+Count of records that need to be fixed: 1
+
+Offending IDs:
+([16],)
+
+
+Time taken: 1.2603089809417725 seconds
+```
+

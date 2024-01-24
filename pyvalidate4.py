@@ -89,12 +89,6 @@ def get_table_charset_and_collation(cursor, database, table):
     charset, collation = cursor.fetchone()
     return charset, collation
 
-"""
-def fix_data(cursor, database, table_name, column_name):  # Add column_name as a parameter
-    cursor.execute(f"SELECT CONVERT(CONVERT(`{column_name}` USING BINARY) USING latin1) AS latin1, CONVERT(CONVERT(`{column_name}` USING BINARY) USING utf8) AS utf8 FROM `{database}`.`{table_name}` WHERE CONVERT(`{column_name}` USING BINARY) RLIKE CONCAT('[', UNHEX('80'), '-', UNHEX('FF'), ']')")
-    for (latin1, utf8) in cursor:
-        print(f"{colored('latin1:', 'red')} {latin1}, {colored('utf8:', 'blue')} {utf8}")
-"""
 def is_unusual_latin1(sequence: bytearray):
     """Check if the sequence contains unusual Latin-1 characters."""
     return any((char > 255) or (128 <= char <= 159) for char in sequence)
@@ -103,10 +97,11 @@ def is_unusual_cp1252(sequence: bytearray):
     """Check if the sequence contains unusual cp1252 characters."""
     return any((char > 255) or char in [129, 141, 143, 144, 157] for char in sequence)
 
-
 def check_compliance(cursor, database, table=None, show_charset=False):
+    start_time = time.time()  # Start the timer
+
     max_retries = 5
-    batch_size = 1000  # Adjust this value as needed
+    batch_size = 100000  # Adjust this value as needed
     offending_ids = []  # List to store offending IDs
     count = 0
 
@@ -134,51 +129,50 @@ def check_compliance(cursor, database, table=None, show_charset=False):
         for (column_name,) in columns:
             offset = 0
             while True:
-                try:
-                    cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
-                    primary_key_result = cursor.fetchone()
-                    if primary_key_result is None:
-                        cursor.execute(f"SELECT `{column_name}` FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
-                        rows = cursor.fetchall()  # Fetch all rows before executing a new query
-                        continue
-                    primary_key = primary_key_result[0]
+                cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
+                primary_key_results = cursor.fetchall()
+                if primary_key_results is None:
+                    # your existing code
+                    pass
+                else:
+                    primary_keys = [result[0] for result in primary_key_results]
+                    primary_key_str = ', '.join(f"`{key}`" for key in primary_keys)
+                    if column_name and primary_key_str:  # Check if column_name and primary_key_str are not empty
+                        cursor.execute(f"SELECT `{column_name}`, {primary_key_str} FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
+                        rows = cursor.fetchall()
+                        if not rows:
+                            break  # No more rows to fetch
 
-                    cursor.execute(f"SELECT `{column_name}`, `{primary_key}` FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
-                    rows = cursor.fetchall()
-                    if not rows:
-                        break  # No more rows to fetch
+                        for row in rows:
+                            value, *ids = row
+                            if value is not None:
+                                latin1_sequence = cp1252_sequence = None  # Define variables with a default value
+                                try:
+                                    latin1_sequence = value.encode('latin1')
+                                    cp1252_sequence = value.encode('cp1252')
+                                except UnicodeEncodeError:
+                                    latin1_sequence = value.encode('latin1', 'ignore')  # ignore characters that can't be encoded
+                                    cp1252_sequence = value.encode('cp1252', 'ignore')  # ignore characters that can't be encoded
 
-                    for row in rows:
-                        value, id = row
-                        if value is not None:
-                            try:
-                                latin1_sequence = value.encode('latin1')
-                                cp1252_sequence = value.encode('cp1252')
-                            except UnicodeEncodeError:
-                                latin1_sequence = value.encode('latin1', 'ignore')  # ignore characters that can't be encoded
-                                cp1252_sequence = value.encode('cp1252', 'ignore')  # ignore characters that can't be encoded
+                                if latin1_sequence and is_unusual_latin1(latin1_sequence) or cp1252_sequence and is_unusual_cp1252(cp1252_sequence):
+                                    offending_ids.append(ids)
+                                    count += 1
 
-                            if is_unusual_latin1(latin1_sequence) or is_unusual_cp1252(cp1252_sequence):
-                                offending_ids.append(id)
-                                count += 1
-
-                    offset += batch_size
-                except mysql.connector.errors.ProgrammingError as e:
-                    if 'doesn\'t exist' in str(e):
-                        print(f"Table {table_name} doesn't exist. Skipping...")
-                        break
-                    else:
-                        raise
+                offset += batch_size # Increase the offset for the next batch
 
         if count > 0:
             print(f"\nCurrent table: {table_name}")
             print(f"Column: {column_name}")
             print(f"Count of records that need to be fixed: {count}\n")
-            if primary_key:
+            if primary_keys:
                 print("Offending IDs:")
                 print(tuple(offending_ids))
                 print("\n")
-                        
+
+    end_time = time.time()  # Stop the timer
+    elapsed_time = end_time - start_time  # Calculate elapsed time
+    print(f"Time taken: {elapsed_time} seconds")
+                             
 def main():
     args = parse_arguments()
     if not any(vars(args).values()):
