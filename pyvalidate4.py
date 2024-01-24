@@ -40,7 +40,7 @@ def parse_arguments():
         python3 pyvalidate4.py -d au_op -t Keyword
     """
     parser = argparse.ArgumentParser(description=usage_text)
-    #parser.add_argument('-s', '--source', help='Source Host')
+    parser.add_argument('-s', '--source', help='Source Host')
     parser.add_argument('-d', '--database', required=True, help='Database Name')
     parser.add_argument('-t', '--table', required=True, help='Select table')
     parser.add_argument('--char', action='store_true', help='Show character set and collation')
@@ -103,10 +103,12 @@ def is_unusual_cp1252(sequence: bytearray):
     """Check if the sequence contains unusual cp1252 characters."""
     return any((char > 255) or char in [129, 141, 143, 144, 157] for char in sequence)
 
+
 def check_compliance(cursor, database, table=None, show_charset=False):
     max_retries = 5
     batch_size = 1000  # Adjust this value as needed
     offending_ids = []  # List to store offending IDs
+    count = 0
 
     if table:
         tables = [(table,)]
@@ -134,7 +136,12 @@ def check_compliance(cursor, database, table=None, show_charset=False):
             while True:
                 try:
                     cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
-                    primary_key = cursor.fetchone()[0]
+                    primary_key_result = cursor.fetchone()
+                    if primary_key_result is None:
+                        cursor.execute(f"SELECT `{column_name}` FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
+                        rows = cursor.fetchall()  # Fetch all rows before executing a new query
+                        continue
+                    primary_key = primary_key_result[0]
 
                     cursor.execute(f"SELECT `{column_name}`, `{primary_key}` FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
                     rows = cursor.fetchall()
@@ -153,18 +160,7 @@ def check_compliance(cursor, database, table=None, show_charset=False):
 
                             if is_unusual_latin1(latin1_sequence) or is_unusual_cp1252(cp1252_sequence):
                                 offending_ids.append(id)
-                                print(f"Id: {id}")
-                                print(f"keyword: {value}")
-                                print(f"Decoded keyword: {value.encode('utf-8', 'replace').decode('utf-8')}")
-                                print(f"keyword bytearray: {latin1_sequence}")
-                                print("Offending char found:")
-                                for char in latin1_sequence:
-                                    if is_unusual_latin1(bytearray([char])):
-                                        print(char)
-                                print(f"Is unusual : True")
-                                print("\n")
-                                print("Offending IDs:")
-                                print(tuple(offending_ids))
+                                count += 1
 
                     offset += batch_size
                 except mysql.connector.errors.ProgrammingError as e:
@@ -174,6 +170,15 @@ def check_compliance(cursor, database, table=None, show_charset=False):
                     else:
                         raise
 
+        if count > 0:
+            print(f"\nCurrent table: {table_name}")
+            print(f"Column: {column_name}")
+            print(f"Count of records that need to be fixed: {count}\n")
+            if primary_key:
+                print("Offending IDs:")
+                print(tuple(offending_ids))
+                print("\n")
+                        
 def main():
     args = parse_arguments()
     if not any(vars(args).values()):
