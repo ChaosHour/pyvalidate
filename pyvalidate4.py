@@ -173,7 +173,6 @@ def check_compliance(cursor, database, table=None, show_charset=False):
     elapsed_time = end_time - start_time  # Calculate elapsed time
     print(f"Time taken: {elapsed_time} seconds")
                              
-import sys  # Make sure to import sys
 
 def main():
     try:
