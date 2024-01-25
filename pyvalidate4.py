@@ -7,6 +7,7 @@ ChaosHour - Kurt Larsen
 
 import re
 import os
+import sys
 import time
 import argparse
 from os import path
@@ -131,9 +132,9 @@ def check_compliance(cursor, database, table=None, show_charset=False):
             while True:
                 cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
                 primary_key_results = cursor.fetchall()
-                if primary_key_results is None:
-                    # your existing code
-                    pass
+                if not primary_key_results:
+                    print(f"Table {table_name} has no primary key. Exiting...")
+                    return
                 else:
                     primary_keys = [result[0] for result in primary_key_results]
                     primary_key_str = ', '.join(f"`{key}`" for key in primary_keys)
@@ -164,33 +165,38 @@ def check_compliance(cursor, database, table=None, show_charset=False):
             print(f"\nCurrent table: {table_name}")
             print(f"Column: {column_name}")
             print(f"Count of records that need to be fixed: {count}\n")
-            if primary_keys:
-                print("Offending IDs:")
-                print(tuple(offending_ids))
-                print("\n")
+            print("Offending IDs:")
+            print(tuple(offending_ids))
+            print("\n")
 
     end_time = time.time()  # Stop the timer
     elapsed_time = end_time - start_time  # Calculate elapsed time
     print(f"Time taken: {elapsed_time} seconds")
                              
+import sys  # Make sure to import sys
+
 def main():
-    args = parse_arguments()
-    if not any(vars(args).values()):
-        return
+    try:
+        args = parse_arguments()
+        if not any(vars(args).values()):
+            return
 
-    config = get_client_config()
-    cnx, cursor = connect_to_database(config)
+        config = get_client_config()
+        cnx, cursor = connect_to_database(config)
 
-    if args.show:
-        show_databases(cursor)
-    elif args.database:
-        if args.char:
-            charset, collation = get_table_charset_and_collation(cursor, args.database, args.table)
-            print(f"Character set: {charset}, Collation: {collation}")
-        else:
-            check_compliance(cursor, args.database, args.table, show_charset=args.char)
+        if args.show:
+            show_databases(cursor)
+        elif args.database:
+            if args.char:
+                charset, collation = get_table_charset_and_collation(cursor, args.database, args.table)
+                print(f"Character set: {charset}, Collation: {collation}")
+            else:
+                check_compliance(cursor, args.database, args.table, show_charset=args.char)
 
-    cnx.close()
+        cnx.close()
+    except KeyboardInterrupt:
+        print("\nExecution interrupted by user. Exiting...")
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

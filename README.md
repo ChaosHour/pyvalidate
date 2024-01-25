@@ -5,6 +5,14 @@
 Checks if utf8 encoded data is being stored in latin1 columns. Validates if the data is valid utf8.
 
 
+## Requirements
+```python
+Tables must have a primary key. 
+```
+
+
+```python
+
 ## How to use
 ```python
 This script performs various operations on a MySQL database.
