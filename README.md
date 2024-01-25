@@ -7,11 +7,11 @@ Checks if utf8 encoded data is being stored in latin1 columns. Validates if the 
 
 ## Requirements
 ```python
-Tables must have a primary key. 
+Tables must have a primary key
 ```
 
 
-```python
+
 
 ## How to use
 ```python
