@@ -38,12 +38,12 @@ def parse_arguments():
 
         
         Check for records with unusual Latin-1 characters and cp1252 characters print the offending IDs:
-        python3 pyvalidate4.py -d au_op -t Keyword
+        python3 pyvalidate4.py -d xxx -t xxx
     """
     parser = argparse.ArgumentParser(description=usage_text)
     parser.add_argument('-s', '--source', help='Source Host')
-    parser.add_argument('-d', '--database', required=True, help='Database Name')
-    parser.add_argument('-t', '--table', required=True, help='Select table')
+    parser.add_argument('-d', '--database', help='Database Name')
+    parser.add_argument('-t', '--table',  help='Select table')
     parser.add_argument('--char', action='store_true', help='Show character set and collation')
     parser.add_argument('--show', action='store_true', help='Show Databases')
     return parser.parse_args()
@@ -173,7 +173,7 @@ def check_compliance(cursor, database, table=None, show_charset=False):
     elapsed_time = end_time - start_time  # Calculate elapsed time
     print(f"Time taken: {elapsed_time} seconds")
                              
-
+"""
 def main():
     try:
         args = parse_arguments()
@@ -191,6 +191,35 @@ def main():
                 print(f"Character set: {charset}, Collation: {collation}")
             else:
                 check_compliance(cursor, args.database, args.table, show_charset=args.char)
+
+        cnx.close()
+    except KeyboardInterrupt:
+        print("\nExecution interrupted by user. Exiting...")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()
+"""
+def main():
+    try:
+        args = parse_arguments()
+        if not any(vars(args).values()):
+            return
+
+        config = get_client_config()
+        cnx, cursor = connect_to_database(config)
+
+        if args.show:
+            show_databases(cursor)
+        elif args.database and args.table:
+            if args.char:
+                charset, collation = get_table_charset_and_collation(cursor, args.database, args.table)
+                print(f"Character set: {charset}, Collation: {collation}")
+            else:
+                check_compliance(cursor, args.database, args.table, show_charset=args.char)
+        else:
+            print("Error: -d/--database and -t/--table are required if not using --show")
+            sys.exit(1)
 
         cnx.close()
     except KeyboardInterrupt:
