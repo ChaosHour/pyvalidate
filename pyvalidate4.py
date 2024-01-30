@@ -14,6 +14,7 @@ from os import path
 from inspect import currentframe, getframeinfo
 from os import getenv, getpid, path
 import mysql.connector
+from mysql.connector import errors
 from termcolor import colored
 from configparser import ConfigParser
 
@@ -38,12 +39,12 @@ def parse_arguments():
 
         
         Check for records with unusual Latin-1 characters and cp1252 characters print the offending IDs:
-        python3 pyvalidate4.py -d xxx -t xxx
+        python3 pyvalidate4.py -d database -t table
     """
     parser = argparse.ArgumentParser(description=usage_text)
     parser.add_argument('-s', '--source', help='Source Host')
     parser.add_argument('-d', '--database', help='Database Name')
-    parser.add_argument('-t', '--table',  help='Select table')
+    parser.add_argument('-t', '--table', help='Select table')
     parser.add_argument('--char', action='store_true', help='Show character set and collation')
     parser.add_argument('--show', action='store_true', help='Show Databases')
     return parser.parse_args()
@@ -102,7 +103,7 @@ def check_compliance(cursor, database, table=None, show_charset=False):
     start_time = time.time()  # Start the timer
 
     max_retries = 5
-    batch_size = 100000  # Adjust this value as needed
+    batch_size = 50000  # Adjust this value as needed
     offending_ids = []  # List to store offending IDs
     count = 0
 
@@ -120,7 +121,7 @@ def check_compliance(cursor, database, table=None, show_charset=False):
             try:
                 cursor.execute(f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '{table_name}' AND table_schema = '{database}' AND DATA_TYPE IN ('char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext') ORDER BY ordinal_position")
                 columns = cursor.fetchall()
-            except mysql.connector.errors.ProgrammingError as e:
+            except errors.ProgrammingError as e:
                 if 'doesn\'t exist' in str(e):
                     print(f"Table {table_name} doesn't exist. Skipping...")
                     continue
@@ -130,34 +131,41 @@ def check_compliance(cursor, database, table=None, show_charset=False):
         for (column_name,) in columns:
             offset = 0
             while True:
-                cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
-                primary_key_results = cursor.fetchall()
-                if not primary_key_results:
-                    print(f"Table {table_name} has no primary key. Exiting...")
-                    return
-                else:
-                    primary_keys = [result[0] for result in primary_key_results]
-                    primary_key_str = ', '.join(f"`{key}`" for key in primary_keys)
-                    if column_name and primary_key_str:  # Check if column_name and primary_key_str are not empty
-                        cursor.execute(f"SELECT `{column_name}`, {primary_key_str} FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
-                        rows = cursor.fetchall()
-                        if not rows:
-                            break  # No more rows to fetch
+                try:
+                    cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
+                    primary_key_results = cursor.fetchall()
+                    if not primary_key_results:
+                        print(f"Table {table_name} has no primary key. Exiting...")
+                        return
+                    else:
+                        primary_keys = [result[0] for result in primary_key_results]
+                        primary_key_str = ', '.join(f"`{key}`" for key in primary_keys)
+                        if column_name and primary_key_str:  # Check if column_name and primary_key_str are not empty
+                            cursor.execute(f"SELECT `{column_name}`, {primary_key_str} FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
+                            rows = cursor.fetchall()
+                            if not rows:
+                                break  # No more rows to fetch
 
-                        for row in rows:
-                            value, *ids = row
-                            if value is not None:
-                                latin1_sequence = cp1252_sequence = None  # Define variables with a default value
-                                try:
-                                    latin1_sequence = value.encode('latin1')
-                                    cp1252_sequence = value.encode('cp1252')
-                                except UnicodeEncodeError:
-                                    latin1_sequence = value.encode('latin1', 'ignore')  # ignore characters that can't be encoded
-                                    cp1252_sequence = value.encode('cp1252', 'ignore')  # ignore characters that can't be encoded
+                            for row in rows:
+                                value, *ids = row
+                                if value is not None:
+                                    latin1_sequence = cp1252_sequence = None  # Define variables with a default value
+                                    try:
+                                        latin1_sequence = value.encode('latin1')
+                                        cp1252_sequence = value.encode('cp1252')
+                                    except UnicodeEncodeError:
+                                        latin1_sequence = value.encode('latin1', 'ignore')  # ignore characters that can't be encoded
+                                        cp1252_sequence = value.encode('cp1252', 'ignore')  # ignore characters that can't be encoded
 
-                                if latin1_sequence and is_unusual_latin1(latin1_sequence) or cp1252_sequence and is_unusual_cp1252(cp1252_sequence):
-                                    offending_ids.append(ids)
-                                    count += 1
+                                    if latin1_sequence and is_unusual_latin1(latin1_sequence) or cp1252_sequence and is_unusual_cp1252(cp1252_sequence):
+                                        offending_ids.append(ids)
+                                        count += 1
+                except errors.InterfaceError as e:
+                    if e.errno == 2013:  # Lost connection error
+                        print(f"Lost connection to MySQL server. Retrying...")
+                        continue
+                    else:
+                        raise
 
                 offset += batch_size # Increase the offset for the next batch
 
@@ -173,33 +181,6 @@ def check_compliance(cursor, database, table=None, show_charset=False):
     elapsed_time = end_time - start_time  # Calculate elapsed time
     print(f"Time taken: {elapsed_time} seconds")
                              
-"""
-def main():
-    try:
-        args = parse_arguments()
-        if not any(vars(args).values()):
-            return
-
-        config = get_client_config()
-        cnx, cursor = connect_to_database(config)
-
-        if args.show:
-            show_databases(cursor)
-        elif args.database:
-            if args.char:
-                charset, collation = get_table_charset_and_collation(cursor, args.database, args.table)
-                print(f"Character set: {charset}, Collation: {collation}")
-            else:
-                check_compliance(cursor, args.database, args.table, show_charset=args.char)
-
-        cnx.close()
-    except KeyboardInterrupt:
-        print("\nExecution interrupted by user. Exiting...")
-        sys.exit(0)
-
-if __name__ == "__main__":
-    main()
-"""
 def main():
     try:
         args = parse_arguments()
