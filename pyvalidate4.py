@@ -101,13 +101,24 @@ def is_unusual_cp1252(sequence: bytearray):
 
 def check_compliance(cursor, database, table=None, show_charset=False):
     start_time = time.time()  # Start the timer
-
+    
+    # Check if the database exists
+    cursor.execute(f"SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '{database}'")
+    if cursor.fetchone() is None:
+        print(f"Database {database} does not exist.")
+        return
+    
     max_retries = 5
-    batch_size = 80000  # Adjust this value as needed
+    batch_size = 20000  # Adjust this value as needed
     offending_ids = []  # List to store offending IDs
     count = 0
 
     if table:
+        # Check if the table exists
+        cursor.execute(f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table}'")
+        if cursor.fetchone() is None:
+            print(f"Table {table} does not exist in database {database}.")
+            return
         tables = [(table,)]
     else:
         cursor.execute(f"SHOW TABLES FROM {database}")
