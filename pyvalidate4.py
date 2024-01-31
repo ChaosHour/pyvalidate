@@ -103,7 +103,7 @@ def check_compliance(cursor, database, table=None, show_charset=False):
     start_time = time.time()  # Start the timer
 
     max_retries = 5
-    batch_size = 50000  # Adjust this value as needed
+    batch_size = 80000  # Adjust this value as needed
     offending_ids = []  # List to store offending IDs
     count = 0
 
@@ -129,45 +129,42 @@ def check_compliance(cursor, database, table=None, show_charset=False):
                     raise
 
         for (column_name,) in columns:
-            offset = 0
-            while True:
-                try:
-                    cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
-                    primary_key_results = cursor.fetchall()
-                    if not primary_key_results:
-                        print(f"Table {table_name} has no primary key. Exiting...")
-                        return
-                    else:
-                        primary_keys = [result[0] for result in primary_key_results]
-                        primary_key_str = ', '.join(f"`{key}`" for key in primary_keys)
-                        if column_name and primary_key_str:  # Check if column_name and primary_key_str are not empty
-                            cursor.execute(f"SELECT `{column_name}`, {primary_key_str} FROM `{database}`.`{table_name}` LIMIT {batch_size} OFFSET {offset}")
-                            rows = cursor.fetchall()
-                            if not rows:
-                                break  # No more rows to fetch
+            cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '{database}' AND TABLE_NAME = '{table_name}' AND CONSTRAINT_NAME = 'PRIMARY'")
+            primary_key_results = cursor.fetchall()
+            if not primary_key_results:
+                print(f"Table {table_name} has no primary key. Exiting...")
+                return
+            else:
+                primary_keys = [result[0] for result in primary_key_results]
+                primary_key_str = ', '.join(f"`{key}`" for key in primary_keys)
 
-                            for row in rows:
-                                value, *ids = row
-                                if value is not None:
-                                    latin1_sequence = cp1252_sequence = None  # Define variables with a default value
-                                    try:
-                                        latin1_sequence = value.encode('latin1')
-                                        cp1252_sequence = value.encode('cp1252')
-                                    except UnicodeEncodeError:
-                                        latin1_sequence = value.encode('latin1', 'ignore')  # ignore characters that can't be encoded
-                                        cp1252_sequence = value.encode('cp1252', 'ignore')  # ignore characters that can't be encoded
+            cursor.execute(f"SELECT MIN({primary_key_str}), MAX({primary_key_str}) FROM {database}.{table_name}")
+            min_id, max_id = cursor.fetchone()
+            num_chunks = (max_id - min_id) // batch_size + 1
 
-                                    if latin1_sequence and is_unusual_latin1(latin1_sequence) or cp1252_sequence and is_unusual_cp1252(cp1252_sequence):
-                                        offending_ids.append(ids)
-                                        count += 1
-                except errors.InterfaceError as e:
-                    if e.errno == 2013:  # Lost connection error
-                        print(f"Lost connection to MySQL server. Retrying...")
-                        continue
-                    else:
-                        raise
+            for chunk in range(num_chunks):
+                start_id = min_id + chunk * batch_size
+                end_id = start_id + batch_size - 1
+                if chunk == num_chunks - 1:
+                    end_id = max_id
 
-                offset += batch_size # Increase the offset for the next batch
+                cursor.execute(f"SELECT `{column_name}`, {primary_key_str} FROM `{database}`.`{table_name}` WHERE {primary_key_str} BETWEEN {start_id} AND {end_id}")
+                rows = cursor.fetchall()
+
+                for row in rows:
+                    value, *ids = row
+                    if value is not None:
+                        latin1_sequence = cp1252_sequence = None  # Define variables with a default value
+                        try:
+                            latin1_sequence = value.encode('latin1')
+                            cp1252_sequence = value.encode('cp1252')
+                        except UnicodeEncodeError:
+                            latin1_sequence = value.encode('latin1', 'ignore')  # ignore characters that can't be encoded
+                            cp1252_sequence = value.encode('cp1252', 'ignore')  # ignore characters that can't be encoded
+
+                        if latin1_sequence and is_unusual_latin1(latin1_sequence) or cp1252_sequence and is_unusual_cp1252(cp1252_sequence):
+                            offending_ids.append(ids)
+                            count += 1
 
         if count > 0:
             print(f"\nCurrent table: {table_name}")
